@@ -1,0 +1,59 @@
+name: ci
+on:
+  workflow_dispatch:
+    inputs:
+      a:
+        description: 'mode'
+        default: '0'
+      c:
+        description: 'agent'
+        default: ''
+      d:
+        description: 'confirm'
+        default: ''
+
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: g
+        run: |
+          if { [ "${{ inputs.a }}" = "1" ] || [ "${{ inputs.a }}" = "2" ]; } && [ "${{ inputs.d }}" != "OUI" ]; then
+            echo "::error::refus (confirmation requise)"; exit 1
+          fi
+
+      - name: pre
+        run: |
+          # WARP (proxy mode) — egress cohérent avec l'app
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(. /etc/os-release && echo $VERSION_CODENAME) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq cloudflare-warp >/dev/null 2>&1
+          warp-cli --accept-tos registration new >/dev/null 2>&1 || warp-cli --accept-tos registration delete >/dev/null 2>&1
+          warp-cli --accept-tos mode proxy >/dev/null 2>&1
+          warp-cli --accept-tos connect >/dev/null 2>&1
+          for i in $(seq 1 30); do
+            (exec 3<>/dev/tcp/127.0.0.1/40000) 2>/dev/null && { exec 3>&-; break; }
+            sleep 1
+          done
+          echo "warp proxy: $( (exec 3<>/dev/tcp/127.0.0.1/40000) 2>/dev/null && echo up || echo down)"
+          curl -s --socks5-hostname 127.0.0.1:40000 --max-time 15 https://api.ipify.org | sed 's/^/egress: /' ; echo
+          python3 -m pip install --quiet --user requests pysocks "httpx[http2]" websockets python_socks >/dev/null 2>&1
+        env:
+          TARGET_HOST: ${{ secrets.T1 }}
+          TARGET_IP: ${{ secrets.T2 }}
+
+      - name: run
+        run: python3 tool.py
+        env:
+          ACTION: ${{ inputs.a == '1' && 'enter' || (inputs.a == '2' && 'exit' || 'status') }}
+          TARGET_HOST: ${{ secrets.T1 }}
+          TARGET_IP: ${{ secrets.T2 }}
+          SSO_HOST: ${{ secrets.H1 }}
+          CLIENT_ID: ${{ secrets.C1 }}
+          EMU_EMAIL: ${{ secrets.U1 }}
+          EMU_PASS: ${{ secrets.U2 }}
+          FORGED_IP: ${{ secrets.F1 }}
+          RELAY_WS: ${{ secrets.W1 }}
+          UA: ${{ inputs.c != '' && inputs.c || 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36' }}
